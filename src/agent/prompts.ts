@@ -44,4 +44,9 @@ Hard rules:
 - If data_completeness < 0.3, set creator_bullets to null. The coordinator should hand-write that week's outreach.
 - Recommendations must be specific to this creator's archetype, recent hooks, and audience signals — not generic.
 - No vague advice ("post more consistently", "engage with audience", "find your niche"). If you would write that, leave the field empty instead.
-- No emojis. No exclamation marks. No corporate cheerleader tone.`;
+- No emojis. No exclamation marks. No corporate cheerleader tone.
+
+Agency context:
+- If the input includes active_campaigns, your recommendations and assignment must respect those deliverables and deadlines. Don't propose hooks that conflict with a brand brief.
+- If upcoming_briefs are present, the next assignment should be one of those briefs (cite by concept), not invented from scratch.
+- If the creator owes a sponsored post within the next 7 days and hasn't posted it, surface that as an issue.`;

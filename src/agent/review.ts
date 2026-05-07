@@ -24,6 +24,14 @@ export interface WeeklyReviewInput {
   }>;
   baseline: CreatorBaseline | null;
   prior_recommendations: { hooks: string[]; series: string[]; assignment: string } | null;
+  active_campaigns: Array<{
+    brand_name: string;
+    campaign_name: string;
+    deliverables: unknown;
+    status: string;
+    end_date: string | null;
+  }>;
+  upcoming_briefs: Array<{ week_of: string; concept: string; format: string | null; due_at: string | null }>;
 }
 
 export interface WeeklyReviewResult {

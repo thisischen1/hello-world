@@ -120,6 +120,41 @@ export async function runWeeklyReviewForCreator(creatorId: string): Promise<RunW
     .limit(1)
     .maybeSingle();
 
+  const { data: campaignRows } = await supabase
+    .from('campaign_assignments')
+    .select('deliverables, status, brand_campaigns(brand_name, campaign_name, end_date)')
+    .eq('creator_id', creatorId)
+    .in('status', ['booked', 'in_production', 'posted']);
+
+  const active_campaigns = (campaignRows ?? []).map((a) => {
+    const c = a.brand_campaigns as unknown as
+      | { brand_name: string; campaign_name: string; end_date: string | null }
+      | null;
+    return {
+      brand_name: c?.brand_name ?? 'unknown',
+      campaign_name: c?.campaign_name ?? 'unknown',
+      deliverables: a.deliverables,
+      status: a.status as string,
+      end_date: c?.end_date ?? null,
+    };
+  });
+
+  const { data: briefRows } = await supabase
+    .from('content_briefs')
+    .select('week_of, concept, format, due_at')
+    .eq('creator_id', creatorId)
+    .gte('week_of', periodEnd.toISOString().slice(0, 10))
+    .in('status', ['draft', 'published', 'in_progress'])
+    .order('week_of', { ascending: true })
+    .limit(5);
+
+  const upcoming_briefs = (briefRows ?? []).map((b) => ({
+    week_of: b.week_of as string,
+    concept: b.concept as string,
+    format: (b.format as string | null) ?? null,
+    due_at: (b.due_at as string | null) ?? null,
+  }));
+
   const result = await generateWeeklyReview({
     creator,
     period_start: periodStart.toISOString().slice(0, 10),
@@ -127,6 +162,8 @@ export async function runWeeklyReviewForCreator(creatorId: string): Promise<RunW
     posts: enriched,
     baseline,
     prior_recommendations: priorReview?.recommendations ?? null,
+    active_campaigns,
+    upcoming_briefs,
   });
 
   // Compute followthrough + outcome from prior recommendations vs this week's posts.

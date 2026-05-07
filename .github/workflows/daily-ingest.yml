@@ -1,4 +1,4 @@
-name: Daily ingest + analyze
+name: Daily ingest + analyze + agency loop
 
 on:
   schedule:
@@ -9,7 +9,7 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -22,7 +22,6 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      # Order matters. Each step is independent so we use `if: always()` to keep going.
       - name: Pull metrics + refresh baseline
         run: npm run ingest
       - name: Tag new posts (hook + retention)
@@ -31,6 +30,12 @@ jobs:
       - name: Posting monitor
         if: ${{ always() }}
         run: npm run monitor
-      - name: Health check (freshness + cost + parser failures)
+      - name: Compliance check on sponsored posts
+        if: ${{ always() }}
+        run: npm run compliance
+      - name: Per-coordinator digest
+        if: ${{ always() }}
+        run: npm run digest
+      - name: Health check
         if: ${{ always() }}
         run: npm run health-check

@@ -12,6 +12,12 @@
     "review:all": "tsx scripts/run-all-reviews.ts",
     "health-check": "tsx scripts/health-check.ts",
     "approve-review": "tsx scripts/approve-review.ts",
+    "compliance": "tsx scripts/run-compliance.ts",
+    "trend-desk": "tsx scripts/run-trend-desk.ts",
+    "digest": "tsx scripts/run-digest.ts",
+    "monthly-statements": "tsx scripts/run-monthly-statements.ts",
+    "campaign-report": "tsx scripts/run-campaign-report.ts",
+    "agency": "tsx scripts/agency.ts",
     "seed": "tsx scripts/seed.ts"
   },
   "repository": {
