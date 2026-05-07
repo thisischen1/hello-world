@@ -2,11 +2,7 @@ import 'dotenv/config';
 import { supabase } from '../src/lib/supabase.ts';
 import { ingestTikTokForCreator } from '../src/ingest/tiktok.ts';
 import { ingestInstagramForCreator } from '../src/ingest/instagram.ts';
-
-// Daily ingestion runner. Executed by GitHub Actions cron (.github/workflows/daily-ingest.yml).
-//
-// For each active creator, pull whatever we have credentials for. Failures are logged
-// per-creator-per-platform but do not stop the run — partial data is better than none.
+import { slackAlert } from '../src/lib/slack.ts';
 
 interface CreatorAuth {
   creator_id: string;
@@ -16,8 +12,8 @@ interface CreatorAuth {
 }
 
 async function loadAuth(creatorId: string): Promise<CreatorAuth[]> {
-  // Auth tokens live in a separate table not modeled here yet (env-driven for the demo).
-  // Stub: read from env vars TIKTOK_TOKEN_<id> / IG_TOKEN_<id> / IG_USER_<id>.
+  // OAuth tokens via env vars are a stopgap. Migrate to a platform_credentials table
+  // before onboarding more than ~5 creators.
   const tt = process.env[`TIKTOK_TOKEN_${creatorId}`];
   const ig = process.env[`IG_TOKEN_${creatorId}`];
   const igUser = process.env[`IG_USER_${creatorId}`];
@@ -27,6 +23,24 @@ async function loadAuth(creatorId: string): Promise<CreatorAuth[]> {
   return out;
 }
 
+async function logRun(
+  creator_id: string,
+  platform: 'tiktok' | 'instagram',
+  source: 'display_api' | 'graph_api',
+  result: { inserted: number; updated: number; success: boolean; error?: string | undefined },
+): Promise<void> {
+  const { error } = await supabase.from('ingestion_runs').insert({
+    creator_id,
+    platform,
+    source,
+    inserted: result.inserted,
+    updated: result.updated,
+    success: result.success,
+    error: result.error ?? null,
+  });
+  if (error) console.error('ingestion_runs insert failed:', error.message);
+}
+
 async function main() {
   const { data: creators, error } = await supabase
     .from('creators')
@@ -34,12 +48,12 @@ async function main() {
     .eq('status', 'active');
   if (error) throw error;
 
-  const results: Array<{ creator: string; platform: string; inserted: number; updated: number; error?: string }> = [];
+  const summary: Array<{ creator: string; platform: string; inserted: number; updated: number; error?: string }> = [];
 
   for (const creator of creators ?? []) {
     const auths = await loadAuth(creator.id);
     if (auths.length === 0) {
-      results.push({ creator: creator.name, platform: '-', inserted: 0, updated: 0, error: 'no auth' });
+      summary.push({ creator: creator.name, platform: '-', inserted: 0, updated: 0, error: 'no auth' });
       continue;
     }
     for (const auth of auths) {
@@ -48,26 +62,32 @@ async function main() {
           auth.platform === 'tiktok'
             ? await ingestTikTokForCreator(creator, auth.access_token)
             : await ingestInstagramForCreator(creator, auth.external_user_id!, auth.access_token);
-        results.push({ creator: creator.name, platform: auth.platform, ...r });
+        await logRun(creator.id, auth.platform, auth.platform === 'tiktok' ? 'display_api' : 'graph_api', {
+          ...r,
+          success: true,
+        });
+        summary.push({ creator: creator.name, platform: auth.platform, ...r });
       } catch (err) {
-        results.push({
-          creator: creator.name,
-          platform: auth.platform,
+        const msg = err instanceof Error ? err.message : String(err);
+        await logRun(creator.id, auth.platform, auth.platform === 'tiktok' ? 'display_api' : 'graph_api', {
           inserted: 0,
           updated: 0,
-          error: err instanceof Error ? err.message : String(err),
+          success: false,
+          error: msg,
         });
+        summary.push({ creator: creator.name, platform: auth.platform, inserted: 0, updated: 0, error: msg });
+        await slackAlert(`Ingestion failed: ${creator.name} / ${auth.platform} — ${msg}`, 'warn');
       }
     }
   }
 
-  const { error: refreshErr } = await supabase.rpc('refresh_creator_baselines').single();
-  if (refreshErr && refreshErr.code !== 'PGRST202') {
-    // PGRST202 = function not found; tolerable for now
+  const { error: refreshErr } = await supabase.rpc('refresh_creator_baselines');
+  if (refreshErr) {
     console.warn('baseline refresh failed:', refreshErr.message);
+    await slackAlert(`Baseline refresh failed: ${refreshErr.message}`, 'warn');
   }
 
-  console.table(results);
+  console.table(summary);
 }
 
 main().catch((err) => {

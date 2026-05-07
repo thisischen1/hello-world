@@ -6,7 +6,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "ingest": "tsx scripts/run-ingestion.ts",
+    "analyze": "tsx scripts/run-analysis.ts",
+    "monitor": "tsx scripts/run-monitor.ts",
     "review": "tsx scripts/generate-review.ts",
+    "review:all": "tsx scripts/run-all-reviews.ts",
+    "health-check": "tsx scripts/health-check.ts",
+    "approve-review": "tsx scripts/approve-review.ts",
     "seed": "tsx scripts/seed.ts"
   },
   "repository": {

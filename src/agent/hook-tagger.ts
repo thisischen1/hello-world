@@ -1,5 +1,6 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { anthropic, MODELS } from '../lib/anthropic.ts';
+import type { UsageLike } from '../lib/cost.ts';
 import { HOOK_TAGGER_SYSTEM, RETENTION_DIAGNOSIS_SYSTEM } from './prompts.ts';
 import {
   HookAnalysisSchema,
@@ -9,19 +10,34 @@ import {
 } from './schemas.ts';
 import type { Post, PostMetrics } from '../db/types.ts';
 
+export interface HookResult {
+  hook: HookAnalysis | null;
+  model: string;
+  usage: UsageLike;
+  parse_error: string | null;
+  duration_ms: number;
+}
+
+export interface RetentionResult {
+  retention: RetentionDiagnosis | null;
+  model: string;
+  usage: UsageLike;
+  parse_error: string | null;
+  duration_ms: number;
+}
+
 export interface HookTagInput {
   post: Post;
   recent_hook_history: Array<{ post_id: string; hook_type: string; hook_label: string }>;
 }
 
-export async function tagHook(input: HookTagInput): Promise<HookAnalysis> {
+export async function tagHook(input: HookTagInput): Promise<HookResult> {
+  const startedAt = Date.now();
   const response = await anthropic.messages.parse({
     model: MODELS.tag,
     max_tokens: 1024,
     output_config: { format: zodOutputFormat(HookAnalysisSchema) },
-    system: [
-      { type: 'text', text: HOOK_TAGGER_SYSTEM, cache_control: { type: 'ephemeral' } },
-    ],
+    system: [{ type: 'text', text: HOOK_TAGGER_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
         role: 'user',
@@ -29,11 +45,21 @@ export async function tagHook(input: HookTagInput): Promise<HookAnalysis> {
       },
     ],
   });
+  const duration_ms = Date.now() - startedAt;
+  const usage: UsageLike = {
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens ?? null,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? null,
+  };
 
-  if (!response.parsed_output) {
-    throw new Error(`Hook tagging failed to parse. stop_reason=${response.stop_reason}`);
-  }
-  return response.parsed_output;
+  return {
+    hook: response.parsed_output ?? null,
+    model: MODELS.tag,
+    usage,
+    parse_error: response.parsed_output ? null : `stop_reason=${response.stop_reason}`,
+    duration_ms,
+  };
 }
 
 export interface RetentionInput {
@@ -43,7 +69,8 @@ export interface RetentionInput {
   creator_baseline: { median_awt: number | null; median_views: number | null } | null;
 }
 
-export async function diagnoseRetention(input: RetentionInput): Promise<RetentionDiagnosis> {
+export async function diagnoseRetention(input: RetentionInput): Promise<RetentionResult> {
+  const startedAt = Date.now();
   const response = await anthropic.messages.parse({
     model: MODELS.tag,
     max_tokens: 1024,
@@ -58,9 +85,19 @@ export async function diagnoseRetention(input: RetentionInput): Promise<Retentio
       },
     ],
   });
+  const duration_ms = Date.now() - startedAt;
+  const usage: UsageLike = {
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens ?? null,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? null,
+  };
 
-  if (!response.parsed_output) {
-    throw new Error(`Retention diagnosis failed to parse. stop_reason=${response.stop_reason}`);
-  }
-  return response.parsed_output;
+  return {
+    retention: response.parsed_output ?? null,
+    model: MODELS.tag,
+    usage,
+    parse_error: response.parsed_output ? null : `stop_reason=${response.stop_reason}`,
+    duration_ms,
+  };
 }

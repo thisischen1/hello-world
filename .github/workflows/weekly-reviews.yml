@@ -7,13 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       creator_id:
-        description: 'Generate review for a single creator (optional)'
+        description: 'Single creator UUID (optional; runs all if omitted)'
         required: false
 
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,14 +27,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - name: Generate reviews
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -n "${{ inputs.creator_id }}" ]; then
             npm run review -- "${{ inputs.creator_id }}"
           else
-            # Fan out across all active creators
-            node --experimental-strip-types --no-warnings scripts/run-all-reviews.ts
+            npm run review:all
           fi

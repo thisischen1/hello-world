@@ -1,4 +1,4 @@
-name: Daily ingest
+name: Daily ingest + analyze
 
 on:
   schedule:
@@ -9,7 +9,12 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,10 +22,15 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      - run: npm run ingest
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Per-creator OAuth tokens are stored as repo secrets named
-          # TIKTOK_TOKEN_<creator_id>, IG_TOKEN_<creator_id>, IG_USER_<creator_id>.
-          # Wire them through here when creators are onboarded.
+      # Order matters. Each step is independent so we use `if: always()` to keep going.
+      - name: Pull metrics + refresh baseline
+        run: npm run ingest
+      - name: Tag new posts (hook + retention)
+        if: ${{ always() }}
+        run: npm run analyze
+      - name: Posting monitor
+        if: ${{ always() }}
+        run: npm run monitor
+      - name: Health check (freshness + cost + parser failures)
+        if: ${{ always() }}
+        run: npm run health-check

@@ -1,8 +1,16 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { anthropic, MODELS } from '../lib/anthropic.ts';
+import type { UsageLike } from '../lib/cost.ts';
 import { WEEKLY_REVIEW_SYSTEM } from './prompts.ts';
 import { WeeklyReviewSchema, type WeeklyReview } from './schemas.ts';
-import type { Creator, CreatorBaseline, HookAnalysis, Post, PostMetrics, RetentionDiagnosis } from '../db/types.ts';
+import type {
+  Creator,
+  CreatorBaseline,
+  HookAnalysis,
+  Post,
+  PostMetrics,
+  RetentionDiagnosis,
+} from '../db/types.ts';
 
 export interface WeeklyReviewInput {
   creator: Creator;
@@ -18,7 +26,16 @@ export interface WeeklyReviewInput {
   prior_recommendations: { hooks: string[]; series: string[]; assignment: string } | null;
 }
 
-export async function generateWeeklyReview(input: WeeklyReviewInput): Promise<WeeklyReview> {
+export interface WeeklyReviewResult {
+  review: WeeklyReview | null;
+  model: string;
+  usage: UsageLike;
+  parse_error: string | null;
+  duration_ms: number;
+}
+
+export async function generateWeeklyReview(input: WeeklyReviewInput): Promise<WeeklyReviewResult> {
+  const startedAt = Date.now();
   const userPayload = JSON.stringify(input, null, 2);
 
   const response = await anthropic.messages.parse({
@@ -26,11 +43,7 @@ export async function generateWeeklyReview(input: WeeklyReviewInput): Promise<We
     max_tokens: 4096,
     output_config: { format: zodOutputFormat(WeeklyReviewSchema) },
     system: [
-      {
-        type: 'text',
-        text: WEEKLY_REVIEW_SYSTEM,
-        cache_control: { type: 'ephemeral' },
-      },
+      { type: 'text', text: WEEKLY_REVIEW_SYSTEM, cache_control: { type: 'ephemeral' } },
     ],
     messages: [
       {
@@ -40,11 +53,29 @@ export async function generateWeeklyReview(input: WeeklyReviewInput): Promise<We
     ],
   });
 
+  const duration_ms = Date.now() - startedAt;
+  const usage: UsageLike = {
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens ?? null,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens ?? null,
+  };
+
   if (!response.parsed_output) {
-    throw new Error(
-      `Weekly review failed to parse. stop_reason=${response.stop_reason}, content=${JSON.stringify(response.content).slice(0, 500)}`,
-    );
+    return {
+      review: null,
+      model: MODELS.review,
+      usage,
+      parse_error: `stop_reason=${response.stop_reason}`,
+      duration_ms,
+    };
   }
 
-  return response.parsed_output;
+  return {
+    review: response.parsed_output,
+    model: MODELS.review,
+    usage,
+    parse_error: null,
+    duration_ms,
+  };
 }
