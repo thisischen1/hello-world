@@ -1,0 +1,35 @@
+name: Weekly reviews
+
+on:
+  schedule:
+    # Tuesday 14:00 UTC — gives Sunday/Monday posts >24h to accumulate metrics
+    - cron: '0 14 * * 2'
+  workflow_dispatch:
+    inputs:
+      creator_id:
+        description: 'Generate review for a single creator (optional)'
+        required: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Generate reviews
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${{ inputs.creator_id }}" ]; then
+            npm run review -- "${{ inputs.creator_id }}"
+          else
+            # Fan out across all active creators
+            node --experimental-strip-types --no-warnings scripts/run-all-reviews.ts
+          fi
